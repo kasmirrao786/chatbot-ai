@@ -1,0 +1,28 @@
+fastapi==0.115.0
+uvicorn[standard]==0.30.6
+python-multipart==0.0.9
+python-dotenv==1.0.1
+nltk==3.9.1
+regex==2024.11.6
+
+# Orchestration: chunking, incremental ingestion (dedup/upsert), Qdrant integration
+llama-index-core==0.11.14
+llama-index-vector-stores-qdrant==0.3.0
+llama-index-embeddings-fastembed==0.2.0
+llama-index-readers-file==0.2.2
+docx2txt==0.8
+
+# Vector store client (talks to either local embedded mode or a hosted Qdrant instance)
+qdrant-client==1.11.3
+
+# Lightweight local embeddings (ONNX runtime, no PyTorch)
+fastembed==0.3.6
+
+# Lexical (keyword) retrieval for hybrid search — pure Python, no model
+# download, no PyTorch. Deliberately NOT a cross-encoder reranker: this
+# service already runs on a tight per-request latency budget (the Node
+# backend gives it one ~6s fast-fail attempt with no retries), so adding a
+# model that needs to load into memory would trade retrieval quality for
+# more timeouts. rank_bm25 scores the small candidate pool vector search
+# already retrieved — no extra network round-trip, negligible CPU cost.
+rank_bm25==0.2.2

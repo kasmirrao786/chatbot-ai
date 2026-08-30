@@ -1,0 +1,446 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="robots" content="noindex, nofollow" />
+<title>Visa Assistant — Automations</title>
+<link rel="stylesheet" href="/admin-assets/shared.css" />
+<style>
+  label.field { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--text-dim); }
+  input[type=text], input[type=url], textarea { width: 100%; }
+  textarea.mono { font-family: var(--mono); font-size: 12.5px; }
+
+  .badge.internal { background: var(--teal-soft); color: var(--teal); }
+  .badge.n8n { background: var(--gold-soft); color: var(--gold); }
+  .badge.api { background: rgba(138,147,163,0.15); color: var(--text-dim); }
+  .badge.on { background: var(--teal-soft); color: var(--teal); }
+  .badge.off { background: var(--panel-2); color: var(--text-dim); border: 1px solid var(--line); }
+
+  .row { display: flex; gap: 6px; align-items: center; }
+  .form-section { display: flex; flex-direction: column; gap: 10px; margin-bottom: 16px; padding-bottom: 16px; border-bottom: 1px solid var(--line); }
+  .form-section:last-child { border-bottom: none; margin-bottom: 0; padding-bottom: 0; }
+</style>
+</head>
+<body>
+
+  <section class="panel">
+    <div class="panel-head">
+      <h2>Tenant</h2>
+      <select id="tenantFilter"><option value="">Select tenant…</option></select>
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="panel-head">
+      <h2>Automations</h2>
+      <button id="newAutomationBtn" class="primary">+ New automation</button>
+    </div>
+    <div class="panel-body" id="automationsList"><div class="empty">Select a tenant to see its automations.</div></div>
+  </section>
+
+  <section class="panel" id="editPanel" style="display:none;">
+    <div class="panel-head"><h2 id="editPanelTitle">Edit automation</h2></div>
+    <div class="panel-body">
+
+      <div class="form-section">
+        <label class="field">Name<input type="text" id="f_name" placeholder="e.g. Visa Status Check" /></label>
+        <label class="field">Description<textarea id="f_description" rows="2" placeholder="What this automation does, for your own reference"></textarea></label>
+        <label class="row" style="font-size:13px;"><input type="checkbox" id="f_enabled" /> Enabled</label>
+      </div>
+
+      <div class="form-section">
+        <div class="row" style="justify-content:space-between;">
+          <strong style="font-size:12.5px;">Intent / Triggers</strong>
+          <button id="addTriggerBtn">+ Add trigger</button>
+        </div>
+        <div class="status-line">Phrases that activate this automation (case-insensitive substring match). Power users: wrap in <span class="mono">/pattern/flags</span> for a real regex.</div>
+        <div id="triggerRows" style="display:flex; flex-direction:column; gap:6px;"></div>
+      </div>
+
+      <div class="form-section">
+        <label class="field">Automation Type
+          <select id="f_type">
+            <option value="n8n">n8n Workflow</option>
+            <option value="api">API</option>
+            <option value="internal">Internal Handler</option>
+          </select>
+        </label>
+
+        <div id="httpTypeFields" class="form-section" style="border:none; padding:0; margin:0;">
+          <label class="field">n8n Webhook URL / API Endpoint<input type="url" id="f_endpoint" placeholder="https://n8n.yourdomain.com/webhook/..." /></label>
+          <label class="field">Headers (JSON)<textarea id="f_headers" class="mono" rows="3" placeholder='{"X-Webhook-Secret": "..."}'></textarea></label>
+        </div>
+
+        <div id="internalTypeFields" class="form-section" style="border:none; padding:0; margin:0; display:none;">
+          <label class="field">Handler
+            <select id="f_handler">
+              <option value="booking">booking</option>
+              <option value="escalation">escalation</option>
+            </select>
+          </label>
+        </div>
+
+        <label class="field">Configuration (JSON — e.g. {"timeoutMs": 15000})<textarea id="f_config" class="mono" rows="2"></textarea></label>
+      </div>
+
+      <div class="form-section">
+        <div class="row" style="justify-content:space-between;">
+          <strong style="font-size:12.5px;">Required Input Fields</strong>
+          <button id="addFieldBtn">+ Add field</button>
+        </div>
+        <div class="status-line">Shown together as one form (all fields at once, all blank) as soon as this automation is triggered — not asked one at a time. Description is the field's on-form label. A field whose key/label mentions "time"/"date"/"schedule"/"slot"/"appointment" gets rendered as a dropdown of real available times instead of free text (see the main README's calendar-check section for hooking that up to a real calendar via n8n).</div>
+        <div id="fieldRows" style="display:flex; flex-direction:column; gap:6px;"></div>
+      </div>
+
+      <div class="form-section">
+        <label class="field">Success Response<textarea id="f_success" rows="2" placeholder="e.g. Your application {{applicationId}} status: {{status}}. {{message}}"></textarea></label>
+        <label class="field">Error Response<textarea id="f_error" rows="2" placeholder="Shown if the call fails or times out"></textarea></label>
+        <div class="status-line">Use <span class="mono">{{fieldKey}}</span> to insert a collected input field, or any key the endpoint's response JSON returns.</div>
+      </div>
+
+      <div class="row" style="justify-content:space-between;">
+        <span id="editStatus" class="status-line"></span>
+        <div class="row">
+          <button id="deleteAutomationBtn" class="danger">Delete</button>
+          <button id="cancelEditBtn">Cancel</button>
+          <button id="saveAutomationBtn" class="primary">Save</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+<script src="/admin-assets/shared.js"></script>
+<script>
+AdminShell.mount({
+  active: "automations",
+  title: "Automations",
+  subtitle: "Configure booking, escalation, and custom n8n/API automations per tenant.",
+});
+
+// Mirrors lib/automations.js's BUILTIN_DEFAULTS — kept in sync manually
+// since this is display/edit config, not runtime logic. Used so booking
+// and escalation show up here even before a tenant has customized them.
+const BUILTIN_DEFAULTS = [
+  {
+    id: "booking", name: "Book an appointment",
+    description: "Collects contact details and books a consultation/call with the team.",
+    enabled: true,
+    triggers: ["book an appointment", "book a call", "book a consultation", "schedule a call", "schedule a consultation", "can i book", "can i schedule"],
+    type: "internal", handler: "booking", endpoint: null, headers: {},
+    fields: [
+      { key: "name", label: "Full name", required: true },
+      { key: "email", label: "Email address", required: true },
+      { key: "preferredTime", label: "Preferred date/time for a call", required: false },
+    ],
+    config: {},
+    successTemplate: "Great, that's confirmed — I've passed this to our team and they'll follow up with you shortly. Is there anything else you'd like to know?",
+    errorTemplate: "Sorry, something went wrong logging your booking — please try again in a moment.",
+  },
+  {
+    id: "escalation", name: "Talk to a human",
+    description: "Connects the visitor with the team when they explicitly ask for a person.",
+    enabled: true,
+    triggers: ["talk to a human", "talk to a person", "speak to a human", "speak to someone", "real person", "customer service", "contact support", "get in touch", "call me", "email me"],
+    type: "internal", handler: "escalation", endpoint: null, headers: {},
+    fields: [{ key: "email", label: "Email address", required: true }],
+    config: {},
+    successTemplate: "Thanks — I've passed your details to our team. Someone will follow up with you shortly. Is there anything else you'd like to know?",
+    errorTemplate: "Sorry, something went wrong passing this along — please try again in a moment.",
+  },
+];
+
+let selectedTenant = "";
+let currentAutomations = [];
+let editingId = null;
+
+function esc(s) { return String(s ?? "").replace(/[&<>"]/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;" }[c])); }
+
+async function api(path, options = {}) {
+  let res;
+  try {
+    res = await fetch(path, { credentials: "same-origin", signal: AbortSignal.timeout(15_000), ...options });
+  } catch (err) {
+    throw new Error(err.name === "TimeoutError" ? "Request timed out." : "Network error — couldn't reach the server.");
+  }
+  if (res.status === 401) { window.location.href = "/admin/login"; throw new Error("Session expired."); }
+  let data = null;
+  try { data = await res.json(); } catch {}
+  if (!res.ok) throw new Error(data?.error || `${res.status}: ${res.statusText}`);
+  return data;
+}
+
+async function loadTenantFilter() {
+  const sel = document.getElementById("tenantFilter");
+  try {
+    const data = await api("/api/admin/overview");
+    for (const t of data.tenants) {
+      const opt = document.createElement("option");
+      opt.value = t.id;
+      opt.textContent = t.id;
+      sel.appendChild(opt);
+    }
+  } catch { /* stays empty */ }
+}
+
+document.getElementById("tenantFilter").addEventListener("change", (e) => {
+  selectedTenant = e.target.value;
+  hideEditPanel();
+  loadAutomations();
+});
+
+function mergeWithDefaults(tenantAutomations) {
+  const tenantIds = new Set((tenantAutomations || []).map((a) => a.id));
+  const defaults = BUILTIN_DEFAULTS.filter((d) => !tenantIds.has(d.id));
+  return [...defaults, ...(tenantAutomations || [])];
+}
+
+async function loadAutomations() {
+  const el = document.getElementById("automationsList");
+  if (!selectedTenant) { el.innerHTML = '<div class="empty">Select a tenant to see its automations.</div>'; return; }
+  el.innerHTML = '<div class="empty">Loading…</div>';
+  try {
+    const data = await api(`/api/admin/tenant/${encodeURIComponent(selectedTenant)}`);
+    const parsed = JSON.parse(data.content);
+    currentAutomations = mergeWithDefaults(parsed.tenant_meta?.automations);
+    renderAutomationsList();
+  } catch (err) {
+    el.innerHTML = `<div class="empty">Failed to load: ${esc(err.message)}</div>`;
+  }
+}
+
+function renderAutomationsList() {
+  const el = document.getElementById("automationsList");
+  if (!currentAutomations.length) { el.innerHTML = '<div class="empty">No automations yet.</div>'; return; }
+  el.innerHTML = `<table><thead><tr><th>Name</th><th>Type</th><th>Triggers</th><th>Status</th><th></th></tr></thead><tbody>
+    ${currentAutomations.map((a) => `
+      <tr>
+        <td><strong>${esc(a.name)}</strong><br><span class="status-line">${esc(a.description || "")}</span></td>
+        <td><span class="badge ${esc(a.type)}">${esc(a.type)}</span></td>
+        <td>${a.triggers.length}</td>
+        <td>
+          <label class="row" style="font-size:12px;">
+            <input type="checkbox" class="toggle-enabled" data-id="${esc(a.id)}" ${a.enabled ? "checked" : ""} />
+            <span class="badge ${a.enabled ? "on" : "off"}">${a.enabled ? "enabled" : "disabled"}</span>
+          </label>
+        </td>
+        <td style="white-space:nowrap;"><button class="edit-btn" data-id="${esc(a.id)}">Edit</button></td>
+      </tr>`).join("")}
+    </tbody></table>`;
+
+  el.querySelectorAll(".edit-btn").forEach((btn) => btn.addEventListener("click", () => openEditPanel(btn.dataset.id)));
+  el.querySelectorAll(".toggle-enabled").forEach((cb) => cb.addEventListener("change", () => quickToggleEnabled(cb.dataset.id, cb.checked)));
+}
+
+async function quickToggleEnabled(id, enabled) {
+  const automation = currentAutomations.find((a) => a.id === id);
+  if (!automation) return;
+  automation.enabled = enabled;
+  try {
+    await persistAutomation(automation);
+  } catch (err) {
+    alert(`Failed to save: ${err.message}`);
+  }
+  renderAutomationsList();
+}
+
+function renderTriggerRows(triggers) {
+  const el = document.getElementById("triggerRows");
+  el.innerHTML = "";
+  triggers.forEach((t, i) => {
+    const row = document.createElement("div");
+    row.className = "row";
+    row.innerHTML = `<input type="text" class="trigger-input" value="${esc(t)}" style="flex:1;" /><button class="trigger-remove">✕</button>`;
+    row.querySelector(".trigger-remove").addEventListener("click", () => { triggers.splice(i, 1); renderTriggerRows(triggers); });
+    el.appendChild(row);
+  });
+}
+function readTriggersFromDom() {
+  return [...document.querySelectorAll("#triggerRows .trigger-input")].map((i) => i.value).filter((v) => v.trim());
+}
+
+function renderFieldRows(fields) {
+  const el = document.getElementById("fieldRows");
+  el.innerHTML = "";
+  fields.forEach((f, i) => {
+    const row = document.createElement("div");
+    row.className = "row";
+    row.innerHTML = `
+      <input type="text" class="fk-input" placeholder="field_key" value="${esc(f.key || "")}" style="width:150px; font-family:var(--mono); font-size:12.5px;" />
+      <input type="text" class="fl-input" placeholder="Description the bot/LLM sees" value="${esc(f.label || "")}" style="flex:1;" />
+      <label class="status-line row"><input type="checkbox" class="fr-input" ${f.required ? "checked" : ""} /> required</label>
+      <button class="f-remove">✕</button>`;
+    row.querySelector(".f-remove").addEventListener("click", () => { fields.splice(i, 1); renderFieldRows(fields); });
+    el.appendChild(row);
+  });
+}
+function readFieldsFromDom() {
+  return [...document.querySelectorAll("#fieldRows > div")].map((row) => ({
+    key: row.querySelector(".fk-input").value.trim(),
+    label: row.querySelector(".fl-input").value.trim(),
+    required: row.querySelector(".fr-input").checked,
+  })).filter((f) => f.key);
+}
+
+document.getElementById("addTriggerBtn").addEventListener("click", () => {
+  const triggers = readTriggersFromDom();
+  triggers.push("");
+  renderTriggerRows(triggers);
+});
+document.getElementById("addFieldBtn").addEventListener("click", () => {
+  const fields = readFieldsFromDom();
+  fields.push({ key: "", label: "", required: false });
+  renderFieldRows(fields);
+});
+
+document.getElementById("f_type").addEventListener("change", (e) => {
+  document.getElementById("httpTypeFields").style.display = e.target.value === "internal" ? "none" : "flex";
+  document.getElementById("internalTypeFields").style.display = e.target.value === "internal" ? "flex" : "none";
+});
+
+function openEditPanel(id) {
+  editingId = id || null;
+  const automation = id ? currentAutomations.find((a) => a.id === id) : {
+    id: "", name: "", description: "", enabled: true, triggers: [], type: "n8n", handler: "booking",
+    endpoint: "", headers: {}, fields: [], config: {}, successTemplate: "", errorTemplate: "",
+  };
+  if (!automation) return;
+
+  document.getElementById("editPanelTitle").textContent = id ? `Edit — ${automation.name}` : "New automation";
+  document.getElementById("f_name").value = automation.name || "";
+  document.getElementById("f_description").value = automation.description || "";
+  document.getElementById("f_enabled").checked = automation.enabled !== false;
+  document.getElementById("f_type").value = automation.type || "n8n";
+  document.getElementById("f_handler").value = automation.handler || "booking";
+  document.getElementById("f_endpoint").value = automation.endpoint || "";
+  document.getElementById("f_headers").value = JSON.stringify(automation.headers || {}, null, 2);
+  document.getElementById("f_config").value = JSON.stringify(automation.config || {}, null, 2);
+  document.getElementById("f_success").value = automation.successTemplate || "";
+  document.getElementById("f_error").value = automation.errorTemplate || "";
+
+  document.getElementById("httpTypeFields").style.display = automation.type === "internal" ? "none" : "flex";
+  document.getElementById("internalTypeFields").style.display = automation.type === "internal" ? "flex" : "none";
+
+  renderTriggerRows([...(automation.triggers || [])]);
+  renderFieldRows(automation.fields ? automation.fields.map((f) => ({ ...f })) : []);
+
+  document.getElementById("deleteAutomationBtn").style.display = id ? "inline-block" : "none";
+  document.getElementById("editStatus").textContent = "";
+  document.getElementById("editPanel").style.display = "block";
+  document.getElementById("editPanel").scrollIntoView({ behavior: "smooth" });
+}
+
+function hideEditPanel() {
+  document.getElementById("editPanel").style.display = "none";
+  editingId = null;
+}
+
+document.getElementById("newAutomationBtn").addEventListener("click", () => {
+  if (!selectedTenant) { alert("Select a tenant first."); return; }
+  openEditPanel(null);
+});
+document.getElementById("cancelEditBtn").addEventListener("click", hideEditPanel);
+
+function slugify(name) {
+  return name.toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "") || `automation-${Date.now()}`;
+}
+
+async function persistAutomation(automation) {
+  const data = await api(`/api/admin/tenant/${encodeURIComponent(selectedTenant)}`);
+  const parsed = JSON.parse(data.content);
+  parsed.tenant_meta = parsed.tenant_meta || {};
+  const list = Array.isArray(parsed.tenant_meta.automations) ? parsed.tenant_meta.automations : [];
+  const idx = list.findIndex((a) => a.id === automation.id);
+  if (idx >= 0) list[idx] = automation;
+  else list.push(automation);
+  parsed.tenant_meta.automations = list;
+
+  const result = await api(`/api/admin/tenant/${encodeURIComponent(selectedTenant)}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ content: JSON.stringify(parsed, null, 2) }),
+  });
+  if (!result.ok) throw new Error(result.error || "Save failed");
+  return result;
+}
+
+document.getElementById("saveAutomationBtn").addEventListener("click", async () => {
+  const statusEl = document.getElementById("editStatus");
+  statusEl.textContent = "Saving…";
+  statusEl.className = "status-line";
+
+  const name = document.getElementById("f_name").value.trim();
+  if (!name) { statusEl.textContent = "Name is required."; statusEl.className = "status-line err"; return; }
+
+  let headers, config;
+  try { headers = JSON.parse(document.getElementById("f_headers").value || "{}"); }
+  catch { statusEl.textContent = "Headers must be valid JSON."; statusEl.className = "status-line err"; return; }
+  try { config = JSON.parse(document.getElementById("f_config").value || "{}"); }
+  catch { statusEl.textContent = "Configuration must be valid JSON."; statusEl.className = "status-line err"; return; }
+
+  const type = document.getElementById("f_type").value;
+  const automation = {
+    id: editingId || slugify(name),
+    name,
+    description: document.getElementById("f_description").value.trim(),
+    enabled: document.getElementById("f_enabled").checked,
+    triggers: readTriggersFromDom(),
+    type,
+    handler: type === "internal" ? document.getElementById("f_handler").value : null,
+    endpoint: type === "internal" ? null : document.getElementById("f_endpoint").value.trim() || null,
+    headers: type === "internal" ? {} : headers,
+    fields: readFieldsFromDom(),
+    config,
+    successTemplate: document.getElementById("f_success").value.trim(),
+    errorTemplate: document.getElementById("f_error").value.trim(),
+  };
+
+  try {
+    await persistAutomation(automation);
+    statusEl.textContent = "✓ Saved and reloaded.";
+    statusEl.className = "status-line ok";
+    hideEditPanel();
+    loadAutomations();
+  } catch (err) {
+    statusEl.textContent = `✗ ${err.message}`;
+    statusEl.className = "status-line err";
+  }
+});
+
+document.getElementById("deleteAutomationBtn").addEventListener("click", async () => {
+  if (!editingId) return;
+  if (!confirm("Delete this automation? This can't be undone.")) return;
+  const statusEl = document.getElementById("editStatus");
+  try {
+    const data = await api(`/api/admin/tenant/${encodeURIComponent(selectedTenant)}`);
+    const parsed = JSON.parse(data.content);
+    const list = Array.isArray(parsed.tenant_meta?.automations) ? parsed.tenant_meta.automations : [];
+    const isBuiltin = BUILTIN_DEFAULTS.some((d) => d.id === editingId);
+
+    if (isBuiltin && !list.some((a) => a.id === editingId)) {
+      list.push({ id: editingId, enabled: false });
+    } else {
+      const idx = list.findIndex((a) => a.id === editingId);
+      if (idx >= 0) list.splice(idx, 1);
+    }
+    parsed.tenant_meta = parsed.tenant_meta || {};
+    parsed.tenant_meta.automations = list;
+
+    const result = await api(`/api/admin/tenant/${encodeURIComponent(selectedTenant)}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ content: JSON.stringify(parsed, null, 2) }),
+    });
+    if (!result.ok) throw new Error(result.error || "Delete failed");
+    hideEditPanel();
+    loadAutomations();
+  } catch (err) {
+    statusEl.textContent = `✗ ${err.message}`;
+    statusEl.className = "status-line err";
+  }
+});
+
+loadTenantFilter();
+</script>
+</body>
+</html>

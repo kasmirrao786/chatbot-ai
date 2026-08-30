@@ -1,0 +1,134 @@
+{
+  "tenant_meta": {
+    "widget_title": "EduPath Assistant",
+    "widget_subtitle": "Admissions & Visa Help",
+    "persona": "Warm, patient, and precise \u2014 like a senior consultant who has answered this question a thousand times and still takes it seriously.",
+    "allowedOrigins": [],
+    "booking": {
+      "fields": [
+        {
+          "key": "name",
+          "label": "Full name",
+          "required": true
+        },
+        {
+          "key": "email",
+          "label": "Email address",
+          "required": true
+        },
+        {
+          "key": "phone",
+          "label": "Phone or WhatsApp number",
+          "required": false
+        },
+        {
+          "key": "programInterest",
+          "label": "Which program or country they're interested in",
+          "required": false
+        },
+        {
+          "key": "preferredTime",
+          "label": "Preferred date/time for a call",
+          "required": false
+        }
+      ]
+    },
+    "integrations": {
+      "email": {
+        "enabled": false,
+        "smtpHost": "smtp.gmail.com",
+        "smtpPort": 465,
+        "user": "",
+        "pass": "",
+        "to": ""
+      },
+      "whatsapp": {
+        "enabled": false,
+        "phoneNumberId": "",
+        "accessToken": "",
+        "to": ""
+      },
+      "webhook": {
+        "enabled": false,
+        "url": "",
+        "headers": {
+          "X-Webhook-Secret": ""
+        }
+      }
+    }
+  },
+  "suggested_questions": [
+    "What documents does a student visa application need?",
+    "How long does UK student visa processing usually take?",
+    "What's the minimum GPA typically required for a Master's program?",
+    "How do I book a free consultation?"
+  ],
+  "faqs": [
+    {
+      "question": "What documents are typically required for a student visa application?",
+      "answer": "A valid passport, an acceptance/offer letter from the institution, proof of funds covering tuition and living costs, academic transcripts, English proficiency test results (IELTS/TOEFL where required), and a visa application form. Some countries also require a medical exam or police clearance certificate.",
+      "reference": "https://example.com/visa-document-checklist"
+    },
+    {
+      "question": "How long does UK student visa (Tier 4 / Student Route) processing usually take?",
+      "answer": "Standard processing from outside the UK is typically 3 weeks, though this can vary by season and country of application. Priority services (5 working days) are available in some locations for an extra fee.",
+      "reference": "https://example.com/uk-visa-timelines"
+    },
+    {
+      "question": "What GPA is typically required for a Master's program?",
+      "answer": "Most Master's programs look for the equivalent of a 3.0/4.0 GPA (or a UK 2:1 equivalent) in a related undergraduate degree, though this varies significantly by university and program competitiveness \u2014 some accept lower GPAs with strong work experience or test scores."
+    },
+    {
+      "question": "How much does the consultancy charge for its services?",
+      "answer": "Initial consultations are free. Full application support packages vary by destination country and service level \u2014 our team will share exact pricing during your first consultation."
+    }
+  ],
+  "programs": [
+    {
+      "name": "UK Master's Application Support",
+      "countries": [
+        "United Kingdom"
+      ],
+      "typicalTimeline": "6-9 months before intake"
+    },
+    {
+      "name": "Canada Study Permit Support",
+      "countries": [
+        "Canada"
+      ],
+      "typicalTimeline": "8-12 months before intake"
+    }
+  ],
+  "offices": [
+    {
+      "country": "Pakistan",
+      "city": "Lahore",
+      "address": "12 Gulberg Boulevard, Lahore, Pakistan",
+      "phone": "+92 42 1234 5678",
+      "email": "lahore@edupath.example.com",
+      "hours": "Mon-Fri 9am-6pm",
+      "servesDestinations": [
+        "United Kingdom",
+        "Ireland"
+      ]
+    },
+    {
+      "country": "Pakistan",
+      "city": "Karachi",
+      "address": "45 Shahrah-e-Faisal, Karachi, Pakistan",
+      "phone": "+92 21 8765 4321",
+      "email": "karachi@edupath.example.com",
+      "hours": "Mon-Fri 9am-6pm",
+      "servesDestinations": [
+        "Canada",
+        "United States"
+      ]
+    }
+  ],
+  "servicedCountries": [
+    "United Kingdom",
+    "Ireland",
+    "Canada",
+    "United States"
+  ]
+}

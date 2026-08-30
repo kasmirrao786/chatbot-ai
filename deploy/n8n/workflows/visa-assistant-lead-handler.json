@@ -1,0 +1,114 @@
+{
+  "name": "Visa Assistant - Lead Handler",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "visa-assistant-leads",
+        "authentication": "headerAuth",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "1",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [240, 300],
+      "webhookId": "visa-assistant-leads"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "loose" },
+          "conditions": [
+            {
+              "leftValue": "={{$json.body.type}}",
+              "rightValue": "booking",
+              "operator": { "type": "string", "operation": "equals" }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "2",
+      "name": "Is Booking?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "fromEmail": "notifications@yourdomain.com",
+        "toEmail": "your-team@yourdomain.com",
+        "subject": "=New booking request — {{$json.body.name || $json.body.email || 'unnamed'}}",
+        "emailFormat": "text",
+        "text": "=New booking request via Visa Assistant:\n\nName: {{$json.body.name}}\nEmail: {{$json.body.email}}\nPhone: {{$json.body.phone}}\nProgram interest: {{$json.body.programInterest}}\nPreferred time: {{$json.body.preferredTime}}\nNotes: {{$json.body.notes}}\n\nTenant: {{$json.body.tenantId}}\nSession: {{$json.body.sessionId}}",
+        "options": {}
+      },
+      "id": "3",
+      "name": "Email - Booking",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [680, 200]
+    },
+    {
+      "parameters": {
+        "fromEmail": "notifications@yourdomain.com",
+        "toEmail": "your-team@yourdomain.com",
+        "subject": "=New escalation — {{$json.body.email || 'no email given'}}",
+        "emailFormat": "text",
+        "text": "=A visitor asked to talk to a human.\n\nEmail: {{$json.body.email}}\nTenant: {{$json.body.tenantId}}\nSession: {{$json.body.sessionId}}",
+        "options": {}
+      },
+      "id": "4",
+      "name": "Email - Escalation",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [680, 420]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://graph.facebook.com/v20.0/YOUR_PHONE_NUMBER_ID/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { \"messaging_product\": \"whatsapp\", \"to\": \"YOUR_STAFF_WHATSAPP_NUMBER\", \"type\": \"text\", \"text\": { \"body\": \"New \" + $json.body.type + \" — \" + ($json.body.name || $json.body.email || \"unknown\") + \" (tenant: \" + $json.body.tenantId + \")\" } } }}",
+        "options": {}
+      },
+      "id": "5",
+      "name": "WhatsApp Notify",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [900, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { \"ok\": true } }}",
+        "options": {}
+      },
+      "id": "6",
+      "name": "Respond OK",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1120, 300]
+    }
+  ],
+  "connections": {
+    "Webhook": { "main": [[{ "node": "Is Booking?", "type": "main", "index": 0 }]] },
+    "Is Booking?": {
+      "main": [
+        [{ "node": "Email - Booking", "type": "main", "index": 0 }],
+        [{ "node": "Email - Escalation", "type": "main", "index": 0 }]
+      ]
+    },
+    "Email - Booking": { "main": [[{ "node": "WhatsApp Notify", "type": "main", "index": 0 }]] },
+    "Email - Escalation": { "main": [[{ "node": "WhatsApp Notify", "type": "main", "index": 0 }]] },
+    "WhatsApp Notify": { "main": [[{ "node": "Respond OK", "type": "main", "index": 0 }]] }
+  },
+  "active": false,
+  "settings": { "executionOrder": "v1" }
+}

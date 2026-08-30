@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="robots" content="noindex, nofollow" />
+<title>Visa Assistant — Admin Login</title>
+<link rel="stylesheet" href="/admin-assets/shared.css" />
+<style>
+  body { min-height: 100vh; display: flex; align-items: center; justify-content: center; }
+  .login-card {
+    width: 340px; background: var(--panel); border: 1px solid var(--line);
+    border-radius: 10px; padding: 30px; display: flex; flex-direction: column; gap: 16px;
+  }
+  .login-brand { display: flex; align-items: center; gap: 10px; margin-bottom: 4px; }
+  .login-brand .mark {
+    width: 30px; height: 30px; border-radius: 7px;
+    background: linear-gradient(135deg, var(--gold), #8C6A34);
+    display: flex; align-items: center; justify-content: center;
+    font-family: var(--font-display); font-weight: 700; font-size: 14px; color: #14110A;
+  }
+  .login-brand .name { font-family: var(--font-display); font-weight: 600; font-size: 16px; }
+  .login-brand .sub { font-size: 11px; color: var(--text-faint); text-transform: uppercase; letter-spacing: 0.5px; }
+  label { font-size: 12.5px; color: var(--text-dim); display: flex; flex-direction: column; gap: 6px; }
+  label input { padding: 10px 11px; font-size: 13.5px; }
+  button[type="submit"] { padding: 11px; font-size: 13.5px; margin-top: 4px; }
+  .error-line { min-height: 16px; }
+</style>
+</head>
+<body>
+<form class="login-card" id="loginForm">
+  <div class="login-brand">
+    <div class="mark">IB</div>
+    <div>
+      <div class="name">Visa Assistant</div>
+      <div class="sub">Admin Console</div>
+    </div>
+  </div>
+  <label>Username <input type="text" id="username" autocomplete="username" required /></label>
+  <label>Password <input type="password" id="password" autocomplete="current-password" required /></label>
+  <div class="error-line" id="error"></div>
+  <button type="submit" class="primary" id="submitBtn">Log in</button>
+</form>
+<script>
+document.getElementById("loginForm").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const btn = document.getElementById("submitBtn");
+  const errEl = document.getElementById("error");
+  btn.disabled = true;
+  errEl.textContent = "";
+  try {
+    const res = await fetch("/api/admin/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "same-origin",
+      body: JSON.stringify({
+        username: document.getElementById("username").value,
+        password: document.getElementById("password").value,
+      }),
+    });
+    const data = await res.json();
+    if (!res.ok || !data.ok) throw new Error(data.error || "Login failed");
+    window.location.href = "/admin";
+  } catch (err) {
+    errEl.textContent = err.message === "Failed to fetch"
+      ? "Can't reach the server — check it's running and reachable."
+      : err.message;
+    btn.disabled = false;
+  }
+});
+</script>
+</body>
+</html>

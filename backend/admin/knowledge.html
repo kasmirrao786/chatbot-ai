@@ -1,0 +1,319 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="robots" content="noindex, nofollow" />
+<title>Visa Assistant — Knowledge Base</title>
+<link rel="stylesheet" href="/admin-assets/shared.css" />
+<style>
+  .badge.connected, .badge.completed { background: var(--teal-soft); color: var(--teal); }
+  .badge.unreachable, .badge.failed { background: var(--danger-soft); color: var(--danger); }
+  .badge.not-configured { background: var(--panel-2); color: var(--text-dim); border: 1px solid var(--line); }
+  .badge.queued { background: var(--gold-soft); color: var(--gold); }
+  .badge.processing { background: var(--teal-soft); color: var(--teal); }
+
+  .progress-bar { height: 6px; background: var(--panel-2); border-radius: 999px; overflow: hidden; margin-top: 6px; }
+  .progress-bar-fill { height: 100%; background: var(--gold); transition: width 150ms ease; }
+
+  .job-row { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--line); font-size: 12.5px; }
+  .job-row:last-child { border-bottom: none; }
+</style>
+</head>
+<body>
+
+  <section class="panel">
+    <div class="panel-head">
+      <h2>Upload</h2>
+      <select id="tenantFilter"><option value="">Select tenant…</option><option value="_global">🌐 Shared Country Knowledge (all tenants)</option></select>
+    </div>
+    <div class="panel-body">
+      <div class="status-line" style="margin-bottom:8px;">Upload to a specific tenant for that consultancy's own info (offices, pricing, history, reviews). Upload to <strong>🌐 Shared Country Knowledge</strong> instead for general country/visa-process content every tenant's search automatically includes — tag it with the Country field below so it only surfaces for relevant questions. If a tenant's own document disagrees with shared content, the tenant's own is always trusted.</div>
+      <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+        <input type="file" id="fileInput" accept=".pdf,.docx,.txt,.md,.csv,.html,.htm,.json" />
+        <input type="text" id="countryInput" placeholder="Country (optional — e.g. United Kingdom)" style="width:240px;" />
+        <input type="text" id="categoryInput" placeholder="Category (optional — e.g. study-visa)" style="width:220px;" />
+        <button id="uploadBtn" class="primary">Upload</button>
+      </div>
+      <div class="status-line" style="margin-top:6px;">Allowed: PDF, DOCX, TXT, MD, CSV, HTML, JSON — up to 25MB. Leave country/category blank for tenant-general content (visible for every question); set country to scope a file to one destination country, category to scope it to a content type (e.g. "study-visa") — either or both, independently.</div>
+      <div id="uploadProgressWrap" style="display:none; margin-top:10px;">
+        <div class="status-line" id="uploadProgressLabel">Uploading…</div>
+        <div class="progress-bar"><div class="progress-bar-fill" id="uploadProgressFill" style="width:0%;"></div></div>
+      </div>
+      <div id="activeJobs" style="margin-top:12px;"></div>
+      <div id="uploadError" class="status-line err" style="margin-top:8px;"></div>
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="panel-head"><h2>Files</h2><button id="refreshFilesBtn">Refresh</button></div>
+    <div class="panel-body" id="filesBody"><div class="empty">Select a tenant to see its files.</div></div>
+  </section>
+
+  <section class="panel">
+    <div class="panel-head"><h2>Ingestion history</h2><button id="refreshHistoryBtn">Refresh</button></div>
+    <div class="panel-body" id="historyBody"><div class="empty">Select a tenant to see ingestion history.</div></div>
+  </section>
+
+<script src="/admin-assets/shared.js"></script>
+<script>
+AdminShell.mount({
+  active: "knowledge",
+  title: "Knowledge Base",
+  subtitle: "Upload, tag, and manage the documents each tenant's chatbot can cite from.",
+  actions: '<span id="kbHealthBadge" class="badge not-configured">checking…</span>',
+});
+
+let selectedTenant = "";
+const pollingJobs = new Set();
+
+function esc(s) { return String(s ?? "").replace(/[&<>"]/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;" }[c])); }
+function fmtDate(iso) { return iso ? new Date(iso).toLocaleString() : "—"; }
+
+async function api(path, options = {}) {
+  let res;
+  try {
+    res = await fetch(path, { credentials: "same-origin", signal: AbortSignal.timeout(20_000), ...options });
+  } catch (err) {
+    throw new Error(err.name === "TimeoutError" ? "Request timed out." : "Network error — couldn't reach the server.");
+  }
+  if (res.status === 401) { window.location.href = "/admin/login"; throw new Error("Session expired."); }
+  let data = null;
+  try { data = await res.json(); } catch {}
+  if (!res.ok) throw new Error(data?.error || `${res.status}: ${res.statusText}`);
+  return data;
+}
+
+async function checkKbHealth() {
+  const badge = document.getElementById("kbHealthBadge");
+  try {
+    const data = await api("/api/admin/kb/health");
+    if (!data.configured) {
+      badge.textContent = "not configured";
+      badge.className = "badge not-configured";
+    } else if (data.status === "connected") {
+      badge.textContent = "connected";
+      badge.className = "badge connected";
+    } else {
+      badge.textContent = "unreachable";
+      badge.className = "badge unreachable";
+      badge.title = typeof data.detail === "string" ? data.detail : "";
+    }
+  } catch (err) {
+    badge.textContent = "error checking";
+    badge.className = "badge unreachable";
+  }
+}
+
+async function loadTenantFilter() {
+  const sel = document.getElementById("tenantFilter");
+  try {
+    const data = await api("/api/admin/overview");
+    for (const t of data.tenants) {
+      const opt = document.createElement("option");
+      opt.value = t.id;
+      opt.textContent = t.id;
+      sel.appendChild(opt);
+    }
+  } catch { /* tenant picker just stays empty */ }
+}
+
+document.getElementById("tenantFilter").addEventListener("change", (e) => {
+  selectedTenant = e.target.value;
+  loadFiles();
+  loadHistory();
+});
+
+// --- Upload with real progress (XHR — fetch has no upload progress event) ---
+document.getElementById("uploadBtn").addEventListener("click", () => {
+  const fileInput = document.getElementById("fileInput");
+  const errEl = document.getElementById("uploadError");
+  errEl.textContent = "";
+  if (!selectedTenant) { errEl.textContent = "Select a tenant first."; return; }
+  if (!fileInput.files.length) { errEl.textContent = "Choose a file first."; return; }
+
+  const file = fileInput.files[0];
+  const countryInput = document.getElementById("countryInput");
+  const categoryInput = document.getElementById("categoryInput");
+  const country = countryInput.value.trim();
+  const category = categoryInput.value.trim();
+  const form = new FormData();
+  form.append("file", file);
+  if (country) form.append("country", country);
+  if (category) form.append("category", category);
+
+  const wrap = document.getElementById("uploadProgressWrap");
+  const fill = document.getElementById("uploadProgressFill");
+  const label = document.getElementById("uploadProgressLabel");
+  wrap.style.display = "block";
+  fill.style.width = "0%";
+  label.textContent = `Uploading ${file.name}…`;
+
+  const xhr = new XMLHttpRequest();
+  xhr.open("POST", `/api/admin/kb/${encodeURIComponent(selectedTenant)}/upload`);
+  xhr.upload.addEventListener("progress", (e) => {
+    if (e.lengthComputable) {
+      const pct = Math.round((e.loaded / e.total) * 100);
+      fill.style.width = pct + "%";
+      label.textContent = `Uploading ${file.name}… ${pct}%`;
+    }
+  });
+  xhr.onload = () => {
+    wrap.style.display = "none";
+    fileInput.value = "";
+    countryInput.value = "";
+    categoryInput.value = "";
+    try {
+      const data = JSON.parse(xhr.responseText);
+      if (xhr.status >= 200 && xhr.status < 300) {
+        trackJob(data.jobId, data.filename, "ingest");
+      } else {
+        errEl.textContent = data.error || `Upload failed (${xhr.status})`;
+      }
+    } catch {
+      errEl.textContent = `Upload failed (${xhr.status})`;
+    }
+  };
+  xhr.onerror = () => {
+    wrap.style.display = "none";
+    errEl.textContent = "Network error during upload — check the KB Service is reachable.";
+  };
+  xhr.send(form);
+});
+
+// --- Job tracking: poll until completed/failed, then refresh files/history ---
+function renderActiveJobs(jobs) {
+  const el = document.getElementById("activeJobs");
+  if (!jobs.length) { el.innerHTML = ""; return; }
+  el.innerHTML = jobs.map((j) => `
+    <div class="job-row" id="job-${j.jobId}">
+      <span>${esc(j.kind === "reindex" ? "Re-indexing" : "Ingesting")} <strong>${esc(j.filename)}</strong></span>
+      <span class="badge ${j.status}">${esc(j.status)}</span>
+    </div>`).join("");
+}
+
+const activeJobsMap = new Map();
+
+function trackJob(jobId, filename, kind) {
+  activeJobsMap.set(jobId, { jobId, filename, kind, status: "queued" });
+  renderActiveJobs([...activeJobsMap.values()]);
+  pollJob(jobId);
+}
+
+async function pollJob(jobId) {
+  if (pollingJobs.has(jobId)) return;
+  pollingJobs.add(jobId);
+  try {
+    for (let i = 0; i < 60; i++) { // up to ~60s of polling
+      let data;
+      try {
+        data = await api(`/api/admin/kb/jobs/${jobId}`);
+      } catch (err) {
+        const entry = activeJobsMap.get(jobId);
+        if (entry) { entry.status = "failed"; entry.error = err.message; renderActiveJobs([...activeJobsMap.values()]); }
+        break;
+      }
+      const entry = activeJobsMap.get(jobId);
+      if (entry) { entry.status = data.status; renderActiveJobs([...activeJobsMap.values()]); }
+      if (data.status === "completed" || data.status === "failed") {
+        if (data.status === "failed") {
+          document.getElementById("uploadError").textContent = `${data.filename}: ${data.error || "Ingestion failed"}`;
+        }
+        loadFiles();
+        loadHistory();
+        setTimeout(() => { activeJobsMap.delete(jobId); renderActiveJobs([...activeJobsMap.values()]); }, 4000);
+        break;
+      }
+      await new Promise((r) => setTimeout(r, 1000));
+    }
+  } finally {
+    pollingJobs.delete(jobId);
+  }
+}
+
+// --- Files ---
+async function loadFiles() {
+  const el = document.getElementById("filesBody");
+  if (!selectedTenant) { el.innerHTML = '<div class="empty">Select a tenant to see its files.</div>'; return; }
+  el.innerHTML = '<div class="empty">Loading…</div>';
+  try {
+    const data = await api(`/api/admin/kb/${encodeURIComponent(selectedTenant)}/files`);
+    if (!data.files.length) { el.innerHTML = '<div class="empty">No files ingested yet for this tenant.</div>'; return; }
+    el.innerHTML = `<table><thead><tr><th>File</th><th>Country</th><th>Characters</th><th>Ingested</th><th></th></tr></thead><tbody>
+      ${data.files.map((f) => `
+        <tr>
+          <td class="mono">${esc(f.filename)}</td>
+          <td>${f.country ? esc(f.country) : '<span class="status-line">general</span>'}${f.category ? ` <span class="badge locked">${esc(f.category)}</span>` : ""}</td>
+          <td>${f.characters?.toLocaleString() ?? "—"}</td>
+          <td>${fmtDate(f.ingestedAt)}</td>
+          <td style="text-align:right; white-space:nowrap;">
+            <button class="reindex-btn" data-file="${esc(f.filename)}" data-country="${esc(f.country || "")}" data-category="${esc(f.category || "")}">Reindex</button>
+            <button class="danger delete-btn" data-file="${esc(f.filename)}" data-country="${esc(f.country || "")}" data-category="${esc(f.category || "")}">Delete</button>
+          </td>
+        </tr>`).join("")}
+      </tbody></table>`;
+    el.querySelectorAll(".reindex-btn").forEach((btn) => btn.addEventListener("click", () => reindexFile(btn.dataset.file, btn.dataset.country, btn.dataset.category)));
+    el.querySelectorAll(".delete-btn").forEach((btn) => btn.addEventListener("click", () => deleteFile(btn.dataset.file, btn.dataset.country, btn.dataset.category)));
+  } catch (err) {
+    el.innerHTML = `<div class="empty">Failed to load: ${esc(err.message)}</div>`;
+  }
+}
+
+async function reindexFile(filename, country, category) {
+  const errEl = document.getElementById("uploadError");
+  errEl.textContent = "";
+  const qs = (() => { const p = new URLSearchParams(); if (country) p.set("country", country); if (category) p.set("category", category); return p.toString() ? `?${p.toString()}` : ""; })();
+  try {
+    const data = await api(`/api/admin/kb/${encodeURIComponent(selectedTenant)}/files/${encodeURIComponent(filename)}/reindex${qs}`, { method: "POST" });
+    trackJob(data.jobId, data.filename, "reindex");
+  } catch (err) {
+    errEl.textContent = `Reindex failed: ${err.message}`;
+  }
+}
+
+async function deleteFile(filename, country, category) {
+  if (!confirm(`Delete "${filename}"${country ? ` (${country})` : ""}${category ? ` [${category}]` : ""}? This removes it from the knowledge base — it can be re-uploaded later if needed.`)) return;
+  const errEl = document.getElementById("uploadError");
+  errEl.textContent = "";
+  const qs = (() => { const p = new URLSearchParams(); if (country) p.set("country", country); if (category) p.set("category", category); return p.toString() ? `?${p.toString()}` : ""; })();
+  try {
+    await api(`/api/admin/kb/${encodeURIComponent(selectedTenant)}/files/${encodeURIComponent(filename)}${qs}`, { method: "DELETE" });
+    loadFiles();
+    loadHistory();
+  } catch (err) {
+    errEl.textContent = `Delete failed: ${err.message}`;
+  }
+}
+
+// --- Ingestion history ---
+async function loadHistory() {
+  const el = document.getElementById("historyBody");
+  if (!selectedTenant) { el.innerHTML = '<div class="empty">Select a tenant to see ingestion history.</div>'; return; }
+  el.innerHTML = '<div class="empty">Loading…</div>';
+  try {
+    const data = await api(`/api/admin/kb/${encodeURIComponent(selectedTenant)}/jobs?limit=50`);
+    if (!data.jobs.length) { el.innerHTML = '<div class="empty">No ingestion history yet.</div>'; return; }
+    el.innerHTML = `<table><thead><tr><th>File</th><th>Kind</th><th>Status</th><th>Updated</th><th>Detail</th></tr></thead><tbody>
+      ${data.jobs.map((j) => `
+        <tr>
+          <td class="mono">${esc(j.filename)}</td>
+          <td>${esc(j.kind)}</td>
+          <td><span class="badge ${esc(j.status)}">${esc(j.status)}</span></td>
+          <td>${fmtDate(j.updatedAt)}</td>
+          <td>${j.status === "failed" ? `<span class="status-line err">${esc(j.error || "")}</span>` : j.result ? `<span class="status-line">${esc(j.result.status)}${j.result.chunksWritten !== undefined ? `, ${j.result.chunksWritten} chunks` : ""}${j.result.sections !== undefined ? `, ${j.result.sections} section${j.result.sections === 1 ? "" : "s"}` : ""}</span>${j.result.tocDetected === false ? ` <span class="badge danger" title="No reliable Table of Contents was detected — this file was ingested as one whole-file chunk instead of being split by section. Check its TOC formatting.">⚠ no TOC split</span>` : ""}` : ""}</td>
+        </tr>`).join("")}
+      </tbody></table>`;
+  } catch (err) {
+    el.innerHTML = `<div class="empty">Failed to load: ${esc(err.message)}</div>`;
+  }
+}
+
+document.getElementById("refreshFilesBtn").addEventListener("click", loadFiles);
+document.getElementById("refreshHistoryBtn").addEventListener("click", loadHistory);
+
+checkKbHealth();
+loadTenantFilter();
+setInterval(checkKbHealth, 30_000);
+</script>
+</body>
+</html>

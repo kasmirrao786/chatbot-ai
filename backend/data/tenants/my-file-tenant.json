@@ -1,0 +1,86 @@
+{
+  "tenant_meta": {
+    "widget_title": "Pink Tree Assistant",
+    "widget_subtitle": "Ask us anything",
+    "persona": "Direct, honest, and low-pressure — like a consultant who'd rather tell you AI isn't the right fit than oversell it. No sales script, no fluff.",
+    "allowedOrigins": ["https://www.pinktreee.com", "https://pinktreee.com"],
+    "booking": {
+      "fields": [
+        { "key": "name", "label": "Full name", "required": true },
+        { "key": "email", "label": "Email address", "required": true },
+        { "key": "company", "label": "Company name", "required": false },
+        { "key": "problemSummary", "label": "What they're trying to solve", "required": false },
+        { "key": "preferredTime", "label": "Preferred date/time for a call", "required": false }
+      ]
+    },
+    "integrations": {
+      "email": {
+        "enabled": false,
+        "smtpHost": "smtp.gmail.com",
+        "smtpPort": 465,
+        "user": "",
+        "pass": "",
+        "to": ""
+      },
+      "whatsapp": {
+        "enabled": false,
+        "phoneNumberId": "",
+        "accessToken": "",
+        "to": "923364315089"
+      },
+      "webhook": {
+        "enabled": false,
+        "url": "",
+        "headers": { "X-Webhook-Secret": "" }
+      }
+    }
+  },
+  "suggested_questions": [
+    "What AI solutions do you offer?",
+    "Do you work with visa consultancies?",
+    "What's The Evasion Chat?",
+    "How do I book a consultation?"
+  ],
+  "faqs": [
+    {
+      "question": "What does Pink Tree do?",
+      "answer": "Pink Tree builds custom AI solutions for businesses — workflow automation, custom AI agents, knowledge base systems, and enterprise integrations. We've built and shipped 75+ custom AI solutions, saving clients 750+ hours in 9 months and helping them scale business capacity up to 3x.",
+      "reference": "https://www.pinktreee.com/"
+    },
+    {
+      "question": "What is The Evasion Chat?",
+      "answer": "The Evasion Chat is Pink Tree's own flagship product — everything we've learned building custom AI for clients, packaged into a platform you can deploy in days. It's trained on your own website and documents, answers instantly 24/7 with no on-call required, and connects to 500+ apps for real automation.",
+      "reference": "https://evasion.pinktreee.com"
+    },
+    {
+      "question": "What AI solutions do you offer?",
+      "answer": "Five core offerings: AI Workflow Automation (automating the steps between a question and its outcome), Custom AI Agents (built around your specific process, not a generic template), Knowledge Base Systems (turning scattered documentation into something people actually use), Enterprise Integrations (making your existing systems talk to each other reliably), and Custom Software Development (when the problem needs software built around it).",
+      "reference": "https://www.pinktreee.com/ai-solutions"
+    },
+    {
+      "question": "What industries do you work with?",
+      "answer": "We go deep rather than wide, with dedicated focus on Visa Consultants (AI that scales a consultancy's capacity without diluting the quality of advice) and Research Companies (making institutional knowledge actually usable). A multi-branch visa consultancy we worked with resolved 65% of routine eligibility questions before a call was ever needed; a research organization cut 6 hours per week of time spent searching for existing findings.",
+      "reference": "https://www.pinktreee.com/industries"
+    },
+    {
+      "question": "How does Pink Tree's process work?",
+      "answer": "Four phases: Discovery (understanding the actual problem, not the AI feature you think you need), Scoping (recommending the smallest solution that actually solves it), Build (iterative phases with regular checkpoints, no end-of-project surprises), and Launch & Handoff (a documented, maintainable system, plus an ongoing support plan if you want one).",
+      "reference": "https://www.pinktreee.com/"
+    },
+    {
+      "question": "Will you tell me if AI isn't the right fit?",
+      "answer": "Yes — that's one of our core principles. If AI isn't the right fit for a problem, we say so, even if it means recommending less than was asked for. We also build on top of your existing systems wherever possible rather than defaulting to a rip-and-replace, and every engagement is documented so you own what we build rather than staying permanently dependent on us.",
+      "reference": "https://www.pinktreee.com/"
+    },
+    {
+      "question": "Do you offer refunds?",
+      "answer": "Yes — full refunds within 30 days of purchase, no questions asked.",
+      "reference": "https://www.pinktreee.com/"
+    },
+    {
+      "question": "How do I book a consultation?",
+      "answer": "You can book a consultation directly through our website, or I can help collect a few details right here and someone from our team will follow up with you.",
+      "reference": "https://www.pinktreee.com/book-consultation"
+    }
+  ]
+}
