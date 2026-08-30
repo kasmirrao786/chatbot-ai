@@ -40,13 +40,11 @@ const { kvGet, kvSet, kvDelete, kvAppendAndCountRecent, kvCountRecent, isRedisAc
 const kbClient = require("./lib/kbClient");
 const tenantStore = require("./lib/tenantStore");
 const activityStore = require("./lib/activityStore");
+const db = require("./lib/db");   // ← add this line
 const { resolveProviderEntry, streamFromProviderChain, providerSemaphore } = require("./lib/providerChain");
 const { sanitizeMessages, extractPriorFollowups } = require("./lib/sanitizeMessages");
 
-const kbClient = require("./lib/kbClient");
-const tenantStore = require("./lib/tenantStore");
-const activityStore = require("./lib/activityStore");
-const db = require("./lib/db");   // ← add this line
+
 
 // ---------------------------------------------------------------------------
 // Process-level safety net. Without these, one unhandled promise rejection
