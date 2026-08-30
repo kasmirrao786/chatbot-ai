@@ -43,6 +43,11 @@ const activityStore = require("./lib/activityStore");
 const { resolveProviderEntry, streamFromProviderChain, providerSemaphore } = require("./lib/providerChain");
 const { sanitizeMessages, extractPriorFollowups } = require("./lib/sanitizeMessages");
 
+const kbClient = require("./lib/kbClient");
+const tenantStore = require("./lib/tenantStore");
+const activityStore = require("./lib/activityStore");
+const db = require("./lib/db");   // ← add this line
+
 // ---------------------------------------------------------------------------
 // Process-level safety net. Without these, one unhandled promise rejection
 // or thrown error anywhere — a DB call in a route that forgot a try/catch,
@@ -474,8 +479,40 @@ async function buildTenantsMap() {
   return next;
 }
 
-// Boot: a bad tenants directory/DB should fail loudly and stop the process
-// — you want this in Railway's boot logs, not a half-started server.
+// One-time, idempotent seed: if the DB is configured and has zero tenants
+// (a brand-new database), load whatever tenant JSON files ship in the
+// image (data/tenants/*.json) so the app has something to serve instead of
+// hard-failing with "No tenants found in the database". Mirrors
+// scripts/migrate-tenants-to-db.js's safe-by-default behavior (skips any
+// tenantId that already exists) — this is NOT a replacement for that
+// script (which you'd still run by hand for a deliberate one-off import),
+// it's just enough to get a fresh environment off the ground on its own.
+async function seedTenantsIfEmpty() {
+  if (!tenantStore.isConfigured()) return;
+  const existing = await tenantStore.loadAllTenants();
+  if (existing.length > 0) return;
+
+  let files = [];
+  try {
+    files = fs.readdirSync(TENANTS_DIR).filter((f) => f.endsWith(".json"));
+  } catch {
+    return; // no bundled tenant files — nothing to seed, admin panel can create one
+  }
+  if (files.length === 0) return;
+
+  console.log(`ℹ️  Database has no tenants yet — seeding ${files.length} bundled tenant file(s) from data/tenants/...`);
+  for (const file of files) {
+    const tenantId = path.basename(file, ".json");
+    try {
+      const raw = JSON.parse(fs.readFileSync(path.join(TENANTS_DIR, file), "utf-8"));
+      await tenantStore.saveTenant(tenantId, raw, "boot-auto-seed");
+      console.log(`  ✅ seeded tenant "${tenantId}"`);
+    } catch (err) {
+      console.error(`  ❌ failed to seed tenant "${tenantId}": ${err.message}`);
+    }
+  }
+}
+
 (async () => {
   try {
     if (process.env.KB_SERVICE_URL && !process.env.KB_SERVICE_API_KEY) {
@@ -487,6 +524,11 @@ async function buildTenantsMap() {
           "service and this backend before that URL is reachable from anywhere but Railway's private network."
       );
     }
+    // Must run before anything touches `tenants`/`faqs`/etc — see lib/db.js's
+    // ensureSchema() for why this lives in app code rather than a Railway
+    // deploy hook.
+    await db.ensureSchema();
+    await seedTenantsIfEmpty();
     tenants = await buildTenantsMap();
     startServer();
   } catch (err) {
