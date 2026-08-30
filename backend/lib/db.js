@@ -152,4 +152,43 @@ async function queryOn(dedicatedUrl, text, params) {
   return p.query(text, params);
 }
 
-module.exports = { isConfigured, getPool, query, withTransaction, getTenantPool, poolFor, queryOn, wantsSsl, stripSslModeParam, parseConnectionComponents };
+// Applies db/schema.sql against the shared pool. Safe to call on every
+// boot — every statement in schema.sql is written as CREATE TABLE IF NOT
+// EXISTS / ADD COLUMN IF NOT EXISTS / DROP ... IF EXISTS, so re-running it
+// against a database that already has the schema is a no-op.
+//
+// This exists because relying on Railway's deploy-time hooks (preDeploy /
+// custom start command) to run schema.sql turned out to be unreliable in
+// practice — config changes pushed through Railway's API were observed to
+// not consistently take effect on the next deploy. Doing it here instead,
+// as the very first thing the app does after requiring lib/db.js and
+// before any query that touches `tenants` etc., means schema application
+// travels with the app code itself and runs on every single boot,
+// regardless of what start command Railway ends up actually using.
+const fs = require("fs");
+const path = require("path");
+
+let schemaApplied = false;
+let schemaApplyPromise = null;
+
+async function ensureSchema() {
+  if (!isConfigured()) return; // no DATABASE_URL — nothing to do, same "unconfigured = off" convention as the rest of this file
+  if (schemaApplied) return;
+  if (schemaApplyPromise) return schemaApplyPromise;
+
+  schemaApplyPromise = (async () => {
+    const schemaPath = path.join(__dirname, "..", "db", "schema.sql");
+    const sql = fs.readFileSync(schemaPath, "utf-8");
+    await query(sql);
+    schemaApplied = true;
+    console.log("✅ Database schema verified/applied (db/schema.sql).");
+  })();
+
+  try {
+    await schemaApplyPromise;
+  } finally {
+    schemaApplyPromise = null;
+  }
+}
+
+module.exports = { isConfigured, getPool, query, withTransaction, getTenantPool, poolFor, queryOn, wantsSsl, stripSslModeParam, parseConnectionComponents, ensureSchema };
